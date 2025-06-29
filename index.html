@@ -16,9 +16,8 @@
       --highlight: #3a8eed;
     }
     * { box-sizing: border-box; }
-    html, body { height: 100%; }
+    html, body { height: 100%; margin: 0; }
     body {
-      margin: 0;
       font-family: sans-serif;
       background: var(--bg);
       color: var(--text);
@@ -30,8 +29,6 @@
       height: 100vh;
       gap: 10px;
       padding: 10px;
-      align-items: stretch;
-      justify-items: stretch;
     }
     .panel {
       background: var(--panel);
@@ -40,8 +37,6 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      height: 100%;
-      min-height: 0;
     }
     .panel h2 {
       margin: 0 0 10px;
@@ -73,64 +68,42 @@
     }
     #fileList li { padding: 5px 0; border-bottom: 1px solid #444; }
     #chatInput, #commsInput { width: 100%; }
-    #profileBtn {
-      position: fixed;
-      bottom: 15px;
-      right: 15px;
-      background: var(--highlight);
-      color: white;
-      border: none;
-      padding: 10px 15px;
-      border-radius: 5px;
-      cursor: pointer;
-      z-index: 1000;
+    #profileBtn, #logoutBtn, #voiceBtn {
+      position: fixed; padding: 10px 15px; border: none; color: white; border-radius: 5px; cursor: pointer; z-index: 1000;
     }
-    #logoutBtn, #voiceBtn {
-      position: fixed;
-      top: 15px;
-      background: red;
-      color: white;
-      border: none;
-      padding: 10px 15px;
-      border-radius: 5px;
-      cursor: pointer;
-      z-index: 1000;
-    }
-    #logoutBtn {
-      right: 15px;
-    }
-    #voiceBtn {
-      right: 115px;
-      background: green;
-    }
+    #profileBtn { bottom:15px; right:15px; background: var(--highlight); }
+    #logoutBtn { top:15px; right:15px; background: red; display:none; }
+    #voiceBtn { top:15px; right:115px; background: green; display:none; }
     #profileSearch {
-      display: none;
-      position: fixed;
-      bottom: 60px;
-      right: 15px;
-      background: var(--panel);
-      padding: 1rem;
-      border-radius: 8px;
-      width: 300px;
-      z-index: 1000;
+      display:none; position: fixed; bottom:60px; right:15px; background: var(--panel);
+      padding:1rem; border-radius:8px; width:300px; z-index:1000;
     }
-    #statusBar {
-      font-size: 0.9rem;
-      margin-bottom: 5px;
+    #statusBar { font-size:0.9rem; margin-bottom:5px; }
+    #profileResult ul { display:grid; grid-template-columns:1fr 1fr; gap:4px; margin:0; padding:0; }
+    #profileResult li { background: var(--accent); padding:4px; border-radius:4px; }
+    /* Tracking UI */
+    #controls { margin-bottom:10px; }
+    #addAircraftBtn {
+      background: var(--highlight); color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;
     }
-    #profileResult ul {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 4px;
-      margin: 0;
-      padding: 0;
-      list-style: none;
+    #trackedList span {
+      background: var(--accent); padding:5px 10px; border-radius:4px; margin-right:5px; display:inline-block;
     }
-    #profileResult li {
-      background: var(--accent);
-      padding: 4px;
-      border-radius: 4px;
+    .remove-btn { margin-left:8px; color:red; cursor:pointer; }
+    #addPopup {
+      display:none; position:fixed; top:50%; left:50%;
+      transform:translate(-50%,-50%);
+      background: var(--panel); padding:20px; border-radius:8px; z-index:2000;
     }
+    #addPopup input {
+      width:100%; padding:8px; background: var(--accent); color:white; border:1px solid #444; border-radius:4px;
+      margin-bottom:10px;
+    }
+    #addPopup button {
+      padding:6px 12px; border:none; border-radius:4px; margin-right:8px; cursor:pointer;
+    }
+    #addPopup .add { background: var(--highlight); color:white; }
+    #addPopup .cancel { background:#444; color:white; }
   </style>
 </head>
 <body>
@@ -141,11 +114,7 @@
     <input type="password" id="loginPassword" placeholder="Password" />
     <button onclick="loginUser()">Login</button>
     <p id="loginError" style="color:red"></p>
-    <p style="margin-top:10px;">
-      <a href="https://forms.office.com/r/gDySnXnE7X" target="_blank" style="color:#3a8eed; text-decoration: underline;">
-        Sign up or Reset password
-      </a>
-    </p>
+    <p style="margin-top:10px;"><a href="https://forms.office.com/r/gDySnXnE7X" target="_blank" style="color:#3a8eed;text-decoration:underline;">Sign up or Reset password</a></p>
   </div>
 
   <div class="grid" id="mainApp" style="display:none">
@@ -158,7 +127,11 @@
 
     <div class="panel">
       <h2>Unit Tracking</h2>
-      <div id="statusBar">Loading CAP aircraft...</div>
+      <div id="controls">
+        <button id="addAircraftBtn" onclick="openAddPopup()">+ Aircraft</button>
+        <div id="trackedList"></div>
+      </div>
+      <div id="statusBar">No aircraft selected. Click + to add.</div>
       <div id="map"></div>
     </div>
 
@@ -178,38 +151,36 @@
   </div>
 
   <button id="profileBtn" onclick="toggleProfileSearch()">Search Profiles</button>
-  <button id="logoutBtn" onclick="logoutUser()" style="display:none">Logout</button>
-  <button id="voiceBtn" onclick="toggleVoiceChannel()" style="display:none">Join Voice</button>
+  <button id="logoutBtn" onclick="logoutUser()">Logout</button>
+  <button id="voiceBtn" onclick="toggleVoiceChannel()">Join Voice</button>
   <div id="profileSearch">
     <input type="text" id="searchBox" placeholder="Search by name..." />
-    <div id="profileResult" style="margin-top:10px"></div>
+    <div id="profileResult"></div>
+  </div>
+
+  <div id="addPopup">
+    <h3>Add Aircraft</h3>
+    <input type="text" id="aircraftInput" placeholder="Callsign or tail number" />
+    <button class="add" onclick="addAircraft()">Add</button>
+    <button class="cancel" onclick="closeAddPopup()">Cancel</button>
   </div>
 
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+
   <script>
     const capApp = firebase.initializeApp({
-      apiKey: "AIzaSyDRaTNFRTV0SLdUgfjVnO0CQT44yuElDh0",
-      authDomain: "test-data-base-6da39.firebaseapp.com",
-      projectId: "test-data-base-6da39",
-      storageBucket: "test-data-base-6da39.appspot.com",
-      messagingSenderId: "342303847512",
-      appId: "1:342303847512:web:74688627a824be8130462d",
-      measurementId: "G-7XN8HCS0G1",
-      databaseURL: "https://test-data-base-6da39-default-rtdb.firebaseio.com"
+      apiKey: "...", authDomain: "...", projectId: "...", storageBucket: "...",
+      messagingSenderId: "...", appId: "...", measurementId: "...",
+      databaseURL: "..."
     }, "capApp");
-
     const dbCAP = capApp.database();
     const db = firebase.initializeApp({
-      apiKey: "AIzaSyAbkgmgqYqatkhmfDKnLHa4S52z9Jcz1lw",
-      authDomain: "mission-9dd26.firebaseapp.com",
-      databaseURL: "https://mission-9dd26-default-rtdb.firebaseio.com",
-      projectId: "mission-9dd26",
-      storageBucket: "mission-9dd26.appspot.com",
-      messagingSenderId: "1080303837931",
-      appId: "1:1080303837931:web:9b5ed2486bd6a2e70914ae",
-      measurementId: "G-NWFV3RFGKV"
+      apiKey: "...", authDomain: "...", databaseURL: "...",
+      projectId: "...", storageBucket: "...", messagingSenderId: "...",
+      appId: "...", measurementId: "..."
     }, "missionApp").database();
 
     const missionKey = 'demo-mission';
@@ -219,266 +190,206 @@
     }).addTo(map);
 
     const statusBar = document.getElementById('statusBar');
+    const trackedListEl = document.getElementById('trackedList');
     const markers = {};
+    const trackedCallsigns = [];
 
-    async function fetchCAPAircraftList() {
-      const snap = await dbCAP.ref('capAircraft').once('value');
-      const data = snap.val();
-      return data ? Object.values(data).map(ac => ac.icao24.toLowerCase()) : [];
+    function openAddPopup() {
+      document.getElementById('addPopup').style.display = 'block';
+      document.getElementById('aircraftInput').focus();
+    }
+    function closeAddPopup() {
+      document.getElementById('aircraftInput').value = '';
+      document.getElementById('addPopup').style.display = 'none';
+    }
+    function addAircraft() {
+      const val = document.getElementById('aircraftInput').value.trim().toUpperCase();
+      if (val && !trackedCallsigns.includes(val)) {
+        trackedCallsigns.push(val);
+        updateTrackedList();
+      }
+      closeAddPopup();
+    }
+    function removeAircraft(val) {
+      const idx = trackedCallsigns.indexOf(val);
+      if (idx > -1) { trackedCallsigns.splice(idx,1); updateTrackedList(); }
+    }
+    function updateTrackedList() {
+      trackedListEl.innerHTML = trackedCallsigns.map(c=>
+        `<span>${c}<span class="remove-btn" onclick="removeAircraft('${c}')">❌</span></span>`
+      ).join('');
     }
 
     async function fetchLiveAircraft() {
       try {
-        const proxy = "https://cors-anywhere.herokuapp.com/";
-        const res = await fetch(proxy + "https://opensky-network.org/api/states/all");
-        if (!res.ok) {
-          console.error("OpenSky API returned status:", res.status);
-          return null;
-        }
+        const res = await fetch("https://opensky-network.org/api/states/all");
+        if (!res.ok) return null;
         const json = await res.json();
         return json.states || [];
-      } catch (error) {
-        console.error("Fetch error:", error);
+      } catch {
         return null;
       }
     }
 
     async function updateAircraftMarkers() {
-      const capIcaoList = await fetchCAPAircraftList();
-      const liveAircraft = await fetchLiveAircraft();
-      if (liveAircraft === null) return statusBar.textContent = "Error loading live aircraft (check console).";
+      const live = await fetchLiveAircraft();
+      if (!live) { statusBar.textContent="Error loading live aircraft."; return; }
 
-      // Filter live CAP planes only
-      const filteredPlanes = liveAircraft.filter(state => {
-        const icao = state[0]?.toLowerCase();
-        return capIcaoList.includes(icao);
-      });
-
-      if (filteredPlanes.length === 0) {
-        statusBar.textContent = "No CAP aircraft currently in the air.";
-        // Clear old markers
-        Object.keys(markers).forEach(icao => {
-          map.removeLayer(markers[icao]);
-          delete markers[icao];
-        });
-        return;
-      }
-
-      statusBar.textContent = `Tracking ${filteredPlanes.length} CAP aircraft`;
       const active = new Set();
+      let found = 0;
 
-      filteredPlanes.forEach(state => {
-        const [icao, callsignRaw, , , , lng, lat, alt, , speed] = state;
-        if (lat == null || lng == null) return;
+      live.forEach(state => {
+        const [icao, csRaw, , , , lng, lat, alt, , spd] = state;
+        if (!csRaw || lat==null || lng==null) return;
+        const cs = csRaw.trim().toUpperCase();
+        if (!trackedCallsigns.includes(cs)) return;
 
-        const icaoLower = icao.toLowerCase();
-        active.add(icaoLower);
-        const callsign = callsignRaw?.trim() || 'N/A';
-
-        if (!markers[icaoLower]) {
-          markers[icaoLower] = L.marker([lat, lng]).addTo(map).bindPopup('Loading...');
-        } else {
-          markers[icaoLower].setLatLng([lat, lng]);
-        }
-
-        markers[icaoLower].setPopupContent(`
-          <b>Callsign:</b> ${callsign}<br>
-          <b>ICAO24:</b> ${icaoLower}<br>
-          <b>Alt:</b> ${alt?.toFixed(0) || 'N/A'} ft<br>
-          <b>Speed:</b> ${speed?.toFixed(0) || 'N/A'} kt
-        `);
+        found++;
+        active.add(cs);
+        if (!markers[cs]) markers[cs]=L.marker([lat,lng]).addTo(map).bindPopup('');
+        else markers[cs].setLatLng([lat,lng]);
+        markers[cs].setPopupContent(`<b>Callsign:</b> ${cs}<br><b>ICAO:</b>${icao}<br><b>Alt:</b>${alt?.toFixed(0)||'N/A'} ft<br><b>Spd:</b>${spd?.toFixed(0)||'N/A'} kt`);
       });
 
-      // Remove markers for planes no longer active
-      for (const icao in markers) {
-        if (!active.has(icao)) {
-          map.removeLayer(markers[icao]);
-          delete markers[icao];
-        }
-      }
+      Object.keys(markers).forEach(cs=>{
+        if (!active.has(cs)) { map.removeLayer(markers[cs]); delete markers[cs]; }
+      });
+
+      if (trackedCallsigns.length===0) statusBar.textContent="No aircraft selected. Click + to add.";
+      else if (found===0) statusBar.textContent=`No matching aircraft in the air.`;
+      else statusBar.textContent=`Tracking ${found} of ${trackedCallsigns.length} aircraft`;
     }
 
-    setInterval(updateAircraftMarkers, 15000);
+    setInterval(updateAircraftMarkers,15000);
     updateAircraftMarkers();
 
-    // (Rest of your code for chat, comms, login, voice channel etc. below unchanged)
-
+    // Chat, comms, files, auth, voice code continues unchanged...
     const chatMessagesEl = document.getElementById('chatMessages');
     const commsLogEl = document.getElementById('commsLog');
     const fileListEl = document.getElementById('fileList');
-
-    let currentUser = null;
-    const users = {
-      "Kendrick Uhles": "Ku2023!@",
-      "Laramie Uhles": "Missions2025",
-      "Ryan Uhles": "IC2025!"
-    };
-
-    function loginUser() {
-      const user = document.getElementById("loginUsername").value.trim();
-      const pass = document.getElementById("loginPassword").value.trim();
-      if (users[user] && users[user] === pass) {
-        currentUser = user;
-        document.getElementById("adminLogin").style.display = "none";
-        document.getElementById("mainApp").style.display = "grid";
-        document.getElementById("logoutBtn").style.display = "block";
-        document.getElementById("voiceBtn").style.display = "block";
-        setTimeout(() => map.invalidateSize(), 300);
-      } else {
-        document.getElementById("loginError").textContent = "Invalid login.";
+    let currentUser=null;
+    const users={ "Kendrick Uhles":"...", "Laramie Uhles":"...", "Ryan Uhles":"..." };
+    function loginUser(){
+      const u=document.getElementById("loginUsername").value.trim();
+      const p=document.getElementById("loginPassword").value.trim();
+      if(users[u]===p){
+        currentUser=u; document.getElementById("adminLogin").style.display="none";
+        document.getElementById("mainApp").style.display="grid";
+        document.getElementById("logoutBtn").style.display="block";
+        document.getElementById("voiceBtn").style.display="block";
+        setTimeout(()=>map.invalidateSize(),300);
+      } else document.getElementById("loginError").textContent="Invalid login.";
+    }
+    function logoutUser(){
+      currentUser=null; document.getElementById("mainApp").style.display="none";
+      document.getElementById("adminLogin").style.display="flex";
+      document.getElementById("logoutBtn").style.display="none";
+      document.getElementById("voiceBtn").style.display="none";
+      leaveVoiceChannel();
+    }
+    function getTimeStamp(){ return new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
+    function sendChat(){
+      const msg=document.getElementById('chatInput').value.trim();
+      if(msg&&currentUser){
+        db.ref(`missions/${missionKey}/chat`).push({text:msg,time:getTimeStamp(),user:currentUser});
+        document.getElementById('chatInput').value='';
+      }
+    }
+    function logComms(){
+      const ent=document.getElementById('commsInput').value.trim();
+      if(ent){
+        db.ref(`missions/${missionKey}/comms`).push({text:ent,time:getTimeStamp()});
+        document.getElementById('commsInput').value='';
+      }
+    }
+    function uploadFile(){
+      const input=document.getElementById('fileUpload');
+      if(input.files.length){
+        db.ref(`missions/${missionKey}/files`).push({name:input.files[0].name});
+        input.value='';
       }
     }
 
-    function logoutUser() {
-      currentUser = null;
-      document.getElementById("mainApp").style.display = "none";
-      document.getElementById("adminLogin").style.display = "flex";
-      document.getElementById("logoutBtn").style.display = "none";
-      document.getElementById("voiceBtn").style.display = "none";
-      leaveVoiceChannel();
-    }
-
-    function getTimeStamp() {
-      const now = new Date();
-      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function sendChat() {
-      const input = document.getElementById('chatInput');
-      const msg = input.value.trim();
-      if (!msg || !currentUser) return;
-      db.ref(`missions/${missionKey}/chat`).push({ text: msg, time: getTimeStamp(), user: currentUser });
-      input.value = '';
-    }
-
-    function logComms() {
-      const input = document.getElementById('commsInput');
-      const entry = input.value.trim();
-      if (!entry) return;
-      db.ref(`missions/${missionKey}/comms`).push({ text: entry, time: getTimeStamp() });
-      input.value = '';
-    }
-
-    function uploadFile() {
-      const input = document.getElementById('fileUpload');
-      if (!input.files.length) return;
-      const file = input.files[0];
-      db.ref(`missions/${missionKey}/files`).push({ name: file.name });
-      input.value = '';
-    }
-
-    db.ref(`missions/${missionKey}/chat`).on('value', snap => {
-      const data = snap.val();
-      chatMessagesEl.innerHTML = '';
-      if (data) Object.values(data).forEach(msg => {
-        const div = document.createElement('div');
-        div.textContent = `[${msg.time || '??'}] ${msg.user || 'Unknown'}: ${msg.text || msg}`;
-        chatMessagesEl.appendChild(div);
+    db.ref(`missions/${missionKey}/chat`).on('value',snap=>{
+      const data=snap.val(); chatMessagesEl.innerHTML='';
+      if(data) Object.values(data).forEach(m=>{
+        const d=document.createElement('div');
+        d.textContent=`[${m.time||'??'}] ${m.user||'Unknown'}: ${m.text||m}`;
+        chatMessagesEl.appendChild(d);
       });
     });
-
-    db.ref(`missions/${missionKey}/comms`).on('value', snap => {
-      const data = snap.val();
-      commsLogEl.innerHTML = '';
-      if (data) Object.values(data).forEach(entry => {
-        const div = document.createElement('div');
-        div.textContent = `${entry.time || '??'} - ${entry.text || entry}`;
-        commsLogEl.appendChild(div);
+    db.ref(`missions/${missionKey}/comms`).on('value',snap=>{
+      const data=snap.val(); commsLogEl.innerHTML='';
+      if(data) Object.values(data).forEach(e=>{
+        const d=document.createElement('div');
+        d.textContent=`${e.time||'??'} - ${e.text||e}`;
+        commsLogEl.appendChild(d);
       });
     });
-
-    db.ref(`missions/${missionKey}/files`).on('value', snap => {
-      const data = snap.val();
-      fileListEl.innerHTML = '';
-      if (data) Object.values(data).forEach(file => {
-        const li = document.createElement('li');
-        li.textContent = file.name;
+    db.ref(`missions/${missionKey}/files`).on('value',snap=>{
+      const data=snap.val(); fileListEl.innerHTML='';
+      if(data) Object.values(data).forEach(f=>{
+        const li=document.createElement('li');
+        li.textContent=f.name;
         fileListEl.appendChild(li);
       });
     });
 
-    let debounceTimeout;
-    document.getElementById("searchBox").addEventListener("input", function () {
-      clearTimeout(debounceTimeout);
-      debounceTimeout = setTimeout(searchProfile, 300);
+    let debounce;
+    document.getElementById("searchBox").addEventListener("input",e=>{
+      clearTimeout(debounce);
+      debounce=setTimeout(searchProfile,300);
     });
-
-    function toggleProfileSearch() {
-      const box = document.getElementById("profileSearch");
-      box.style.display = box.style.display === "none" ? "block" : "none";
+    function toggleProfileSearch(){
+      document.getElementById("profileSearch").style.display=
+       document.getElementById("profileSearch").style.display==="none"?"block":"none";
     }
-
-    function searchProfile() {
-      const name = document.getElementById("searchBox").value.trim();
-      const resultBox = document.getElementById("profileResult");
-      if (!name) return resultBox.innerHTML = "";
-      db.ref(`profiles/${name}`).once('value', snap => {
-        const data = snap.val();
-        resultBox.innerHTML = data ? `<strong>${name}</strong><br><ul>${data.qualifications.map(q => `<li>${q}</li>`).join('')}</ul>` : 'Profile not found.';
+    function searchProfile(){
+      const name=document.getElementById("searchBox").value.trim();
+      const box=document.getElementById("profileResult");
+      if(!name) return box.innerHTML="";
+      db.ref(`profiles/${name}`).once('value',snap=>{
+        const d=snap.val();
+        box.innerHTML=d? `<strong>${name}</strong><br><ul>${d.qualifications.map(q=>`<li>${q}</li>`).join('')}</ul>`:'Profile not found.';
       });
     }
 
-    // Voice Channel
-    let voiceStream = null;
-    let peers = {};
-    let voiceChannelActive = false;
-    const voiceRoom = "voiceRoom1";
-
-    async function toggleVoiceChannel() {
-      if (voiceChannelActive) {
-        leaveVoiceChannel();
-      } else {
-        joinVoiceChannel();
-      }
-    }
-
-    async function joinVoiceChannel() {
-      document.getElementById("voiceBtn").textContent = "Leave Voice";
-      voiceChannelActive = true;
-      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      const myId = Date.now().toString();
-      const myRef = db.ref(`missions/${missionKey}/voice/${myId}`);
-      myRef.set(true);
-      myRef.onDisconnect().remove();
-
-      db.ref(`missions/${missionKey}/voice`).on("value", snap => {
-        const users = snap.val() || {};
-        Object.keys(users).forEach(id => {
-          if (id !== myId && !peers[id]) {
-            createVoicePeer(id, myId, myRef);
-          }
+    let voiceStream=null,peers={},voiceChannelActive=false;
+    async function toggleVoiceChannel(){ voiceChannelActive?leaveVoiceChannel():joinVoiceChannel(); }
+    async function joinVoiceChannel(){
+      document.getElementById("voiceBtn").textContent="Leave Voice";
+      voiceChannelActive=true;
+      voiceStream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const myId=Date.now().toString(), myRef=db.ref(`missions/${missionKey}/voice/${myId}`);
+      myRef.set(true); myRef.onDisconnect().remove();
+      db.ref(`missions/${missionKey}/voice`).on('value',snap=>{
+        const u=snap.val()||{};
+        Object.keys(u).forEach(id=>{
+          if(id!==myId&&!peers[id]) createVoicePeer(id,myId,myRef);
         });
       });
     }
-
-    function leaveVoiceChannel() {
-      document.getElementById("voiceBtn").textContent = "Join Voice";
-      voiceChannelActive = false;
-      Object.values(peers).forEach(p => p.destroy());
-      peers = {};
-      voiceStream?.getTracks().forEach(t => t.stop());
-      voiceStream = null;
+    function leaveVoiceChannel(){
+      document.getElementById("voiceBtn").textContent="Join Voice";
+      voiceChannelActive=false;
+      Object.values(peers).forEach(p=>p.destroy());
+      peers={}; voiceStream?.getTracks().forEach(t=>t.stop());
       db.ref(`missions/${missionKey}/voice`).off();
     }
-
-    function createVoicePeer(remoteId, myId, myRef) {
-      const peer = new SimplePeer({ initiator: myId < remoteId, trickle: false, stream: voiceStream });
-      peer.on('signal', data => {
-        db.ref(`missions/${missionKey}/voiceSignals/${myId}_to_${remoteId}`).set(data);
+    function createVoicePeer(rid,myId,myRef){
+      const peer=new SimplePeer({initiator: myId<rid, trickle:false, stream:voiceStream});
+      peers[rid]=peer;
+      const sigRef=db.ref(`missions/${missionKey}/signals/${myId}_${rid}`);
+      peer.on('signal',data=>sigRef.set(JSON.stringify(data)));
+      db.ref(`missions/${missionKey}/signals/${rid}_${myId}`).on('value',snap=>{
+        const v=snap.val(); if(v) peer.signal(JSON.parse(v));
       });
-      db.ref(`missions/${missionKey}/voiceSignals/${remoteId}_to_${myId}`).on('value', snap => {
-        if (snap.exists()) {
-          peer.signal(snap.val());
-        }
+      peer.on('stream',stream=>{
+        const a=new Audio();
+        a.srcObject=stream; a.play();
       });
-      peer.on('stream', stream => {
-        const audio = new Audio();
-        audio.srcObject = stream;
-        audio.play();
-      });
-      peers[remoteId] = peer;
     }
+    window.addEventListener('resize',()=>map.invalidateSize());
   </script>
 </body>
 </html>
