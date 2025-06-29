@@ -221,54 +221,60 @@
     const statusBar = document.getElementById('statusBar');
     const markers = {};
 
-    // Removed fetchCAPAircraftList() - no longer needed
-
     async function fetchLiveAircraft() {
-      const res = await fetch("https://opensky-network.org/api/states/all");
-      if (!res.ok) return null;
-      const json = await res.json();
-      return json.states || [];
+      try {
+        const res = await fetch("https://opensky-network.org/api/states/all");
+        if (!res.ok) return null;
+        const json = await res.json();
+        return json.states || [];
+      } catch {
+        return null;
+      }
     }
 
     async function updateAircraftMarkers() {
       const liveAircraft = await fetchLiveAircraft();
-      if (!liveAircraft) return statusBar.textContent = "Error loading live aircraft.";
+      if (!liveAircraft) {
+        statusBar.textContent = "Error loading live aircraft.";
+        return;
+      }
 
-      // Filter only aircraft with callsign containing "CAP" (case insensitive)
+      // Filter live aircraft by callsign containing "CAP" (case-insensitive)
       const capAircraft = liveAircraft.filter(state => {
-        const callsignRaw = state[1] || "";
-        const lat = state[6];
-        const lng = state[5];
-        return callsignRaw.toUpperCase().includes("CAP") && lat != null && lng != null;
+        const callsign = state[1] || "";
+        return callsign.toUpperCase().includes("CAP");
       });
 
-      statusBar.textContent = `Tracking ${capAircraft.length} CAP aircraft`;
+      if (capAircraft.length === 0) {
+        statusBar.textContent = "No CAP aircraft currently in the air.";
+      } else {
+        statusBar.textContent = `Tracking ${capAircraft.length} CAP aircraft`;
+      }
 
       const active = new Set();
 
       capAircraft.forEach(state => {
         const [icao, callsignRaw, , , , lng, lat, alt, , speed] = state;
-        const icaoLower = icao?.toLowerCase();
-        if (!icaoLower) return;
+        if (lat == null || lng == null) return;
 
+        const icaoLower = icao.toLowerCase();
         active.add(icaoLower);
-        const callsign = callsignRaw?.trim() || 'N/A';
 
         if (!markers[icaoLower]) {
-          markers[icaoLower] = L.marker([lat, lng]).addTo(map).bindPopup('Loading...');
+          markers[icaoLower] = L.marker([lat, lng]).addTo(map);
         } else {
           markers[icaoLower].setLatLng([lat, lng]);
         }
 
         markers[icaoLower].setPopupContent(`
-          <b>Callsign:</b> ${callsign}<br>
+          <b>Callsign:</b> ${callsignRaw.trim()}<br>
           <b>ICAO24:</b> ${icaoLower}<br>
           <b>Alt:</b> ${alt?.toFixed(0) || 'N/A'} ft<br>
           <b>Speed:</b> ${speed?.toFixed(0) || 'N/A'} kt
         `);
       });
 
-      // Remove markers for aircraft no longer active
+      // Remove markers that are no longer active
       for (const icao in markers) {
         if (!active.has(icao)) {
           map.removeLayer(markers[icao]);
@@ -456,10 +462,8 @@
       });
 
       db.ref(`missions/${missionKey}/signals/${otherId}_${myId}`).on('value', snap => {
-        const data = snap.val();
-        if (data) {
-          peer.signal(JSON.parse(data));
-        }
+        const val = snap.val();
+        if (val) peer.signal(JSON.parse(val));
       });
 
       peer.on('stream', stream => {
@@ -469,8 +473,8 @@
       });
 
       peer.on('close', () => {
-        signalRef.remove();
         delete peers[otherId];
+        signalRef.remove();
       });
     }
   </script>
