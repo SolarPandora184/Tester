@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mission Management</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://cdn.jsdelivr.net/npm/simple-peer@9.11.1/simplepeer.min.js"></script>
+  <style>
+    :root {
+      --bg: #12161d;
+      --panel: #1e232b;
+      --accent: #2d333b;
+      --text: #ffffff;
+      --muted: #a0a0a0;
+      --highlight: #3a8eed;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      height: 100vh;
+      gap: 10px;
+      padding: 10px;
+      align-items: stretch;
+      justify-items: stretch;
+    }
+    .panel {
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      height: 100%;
+      min-height: 0;
+    }
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1.2rem;
+      border-bottom: 1px solid var(--accent);
+      padding-bottom: 5px;
+    }
+    #map {
+      flex-grow: 1;
+      width: 100%;
+      border-radius: 8px;
+      min-height: 0;
+    }
+    #chatMessages, #commsLog, #fileList {
+      flex: 1;
+      overflow-y: auto;
+      background: var(--accent);
+      padding: 0.5rem;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    input, button, textarea {
+      background: #2a2f38;
+      color: white;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 0.5rem;
+      margin-top: 5px;
+    }
+    #fileList li { padding: 5px 0; border-bottom: 1px solid #444; }
+    #chatInput, #commsInput { width: 100%; }
+    #profileBtn {
+      position: fixed;
+      bottom: 15px;
+      right: 15px;
+      background: var(--highlight);
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      z-index: 1000;
+    }
+    #logoutBtn, #voiceBtn {
+      position: fixed;
+      top: 15px;
+      background: red;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 5px;
+      cursor: pointer;
+      z-index: 1000;
+    }
+    #logoutBtn {
+      right: 15px;
+    }
+    #voiceBtn {
+      right: 115px;
+      background: green;
+    }
+    #profileSearch {
+      display: none;
+      position: fixed;
+      bottom: 60px;
+      right: 15px;
+      background: var(--panel);
+      padding: 1rem;
+      border-radius: 8px;
+      width: 300px;
+      z-index: 1000;
+    }
+    #statusBar {
+      font-size: 0.9rem;
+      margin-bottom: 5px;
+    }
+    #profileResult ul {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    #profileResult li {
+      background: var(--accent);
+      padding: 4px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="adminLogin" style="position:fixed;top:0;left:0;width:100vw;height:100vh;background:white;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999">
+    <img src="Logo" alt="Logo" style="width:300px;margin-bottom:1rem" />
+    <h2>Login</h2>
+    <input id="loginUsername" placeholder="Username" />
+    <input type="password" id="loginPassword" placeholder="Password" />
+    <button onclick="loginUser()">Login</button>
+    <p id="loginError" style="color:red"></p>
+    <p style="margin-top:10px;">
+      <a href="https://forms.office.com/r/gDySnXnE7X" target="_blank" style="color:#3a8eed; text-decoration: underline;">
+        Sign up or Reset password
+      </a>
+    </p>
+  </div>
+
+  <div class="grid" id="mainApp" style="display:none">
+    <div class="panel">
+      <h2>Incident Command</h2>
+      <div id="chatMessages"></div>
+      <input type="text" id="chatInput" placeholder="Message #operations" />
+      <button onclick="sendChat()">Send</button>
+    </div>
+
+    <div class="panel">
+      <h2>Unit Tracking</h2>
+      <div id="statusBar">Loading CAP aircraft...</div>
+      <div id="map"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Comms Log</h2>
+      <div id="commsLog"></div>
+      <input type="text" id="commsInput" placeholder="Log entry" />
+      <button onclick="logComms()">Log</button>
+    </div>
+
+    <div class="panel">
+      <h2>File Sharing</h2>
+      <input type="file" id="fileUpload" />
+      <button onclick="uploadFile()">Upload</button>
+      <ul id="fileList"></ul>
+    </div>
+  </div>
+
+  <button id="profileBtn" onclick="toggleProfileSearch()">Search Profiles</button>
+  <button id="logoutBtn" onclick="logoutUser()" style="display:none">Logout</button>
+  <button id="voiceBtn" onclick="toggleVoiceChannel()" style="display:none">Join Voice</button>
+  <div id="profileSearch">
+    <input type="text" id="searchBox" placeholder="Search by name..." />
+    <div id="profileResult" style="margin-top:10px"></div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const capApp = firebase.initializeApp({
+      apiKey: "AIzaSyDRaTNFRTV0SLdUgfjVnO0CQT44yuElDh0",
+      authDomain: "test-data-base-6da39.firebaseapp.com",
+      projectId: "test-data-base-6da39",
+      storageBucket: "test-data-base-6da39.appspot.com",
+      messagingSenderId: "342303847512",
+      appId: "1:342303847512:web:74688627a824be8130462d",
+      measurementId: "G-7XN8HCS0G1",
+      databaseURL: "https://test-data-base-6da39-default-rtdb.firebaseio.com"
+    }, "capApp");
+
+    const dbCAP = capApp.database();
+    const db = firebase.initializeApp({
+      apiKey: "AIzaSyAbkgmgqYqatkhmfDKnLHa4S52z9Jcz1lw",
+      authDomain: "mission-9dd26.firebaseapp.com",
+      databaseURL: "https://mission-9dd26-default-rtdb.firebaseio.com",
+      projectId: "mission-9dd26",
+      storageBucket: "mission-9dd26.appspot.com",
+      messagingSenderId: "1080303837931",
+      appId: "1:1080303837931:web:9b5ed2486bd6a2e70914ae",
+      measurementId: "G-NWFV3RFGKV"
+    }, "missionApp").database();
+
+    const missionKey = 'demo-mission';
+    const map = L.map('map').setView([37.5, -119], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    const statusBar = document.getElementById('statusBar');
+    const markers = {};
+
+    // Removed fetchCAPAircraftList() - no longer needed
+
+    async function fetchLiveAircraft() {
+      const res = await fetch("https://opensky-network.org/api/states/all");
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.states || [];
+    }
+
+    async function updateAircraftMarkers() {
+      const liveAircraft = await fetchLiveAircraft();
+      if (!liveAircraft) return statusBar.textContent = "Error loading live aircraft.";
+
+      // Filter only aircraft with callsign containing "CAP" (case insensitive)
+      const capAircraft = liveAircraft.filter(state => {
+        const callsignRaw = state[1] || "";
+        const lat = state[6];
+        const lng = state[5];
+        return callsignRaw.toUpperCase().includes("CAP") && lat != null && lng != null;
+      });
+
+      statusBar.textContent = `Tracking ${capAircraft.length} CAP aircraft`;
+
+      const active = new Set();
+
+      capAircraft.forEach(state => {
+        const [icao, callsignRaw, , , , lng, lat, alt, , speed] = state;
+        const icaoLower = icao?.toLowerCase();
+        if (!icaoLower) return;
+
+        active.add(icaoLower);
+        const callsign = callsignRaw?.trim() || 'N/A';
+
+        if (!markers[icaoLower]) {
+          markers[icaoLower] = L.marker([lat, lng]).addTo(map).bindPopup('Loading...');
+        } else {
+          markers[icaoLower].setLatLng([lat, lng]);
+        }
+
+        markers[icaoLower].setPopupContent(`
+          <b>Callsign:</b> ${callsign}<br>
+          <b>ICAO24:</b> ${icaoLower}<br>
+          <b>Alt:</b> ${alt?.toFixed(0) || 'N/A'} ft<br>
+          <b>Speed:</b> ${speed?.toFixed(0) || 'N/A'} kt
+        `);
+      });
+
+      // Remove markers for aircraft no longer active
+      for (const icao in markers) {
+        if (!active.has(icao)) {
+          map.removeLayer(markers[icao]);
+          delete markers[icao];
+        }
+      }
+    }
+
+    setInterval(updateAircraftMarkers, 15000);
+    updateAircraftMarkers();
+
+    const chatMessagesEl = document.getElementById('chatMessages');
+    const commsLogEl = document.getElementById('commsLog');
+    const fileListEl = document.getElementById('fileList');
+
+    let currentUser = null;
+    const users = {
+      "Kendrick Uhles": "Ku2023!@",
+      "Laramie Uhles": "Missions2025",
+      "Ryan Uhles": "IC2025!"
+    };
+
+    function loginUser() {
+      const user = document.getElementById("loginUsername").value.trim();
+      const pass = document.getElementById("loginPassword").value.trim();
+      if (users[user] && users[user] === pass) {
+        currentUser = user;
+        document.getElementById("adminLogin").style.display = "none";
+        document.getElementById("mainApp").style.display = "grid";
+        document.getElementById("logoutBtn").style.display = "block";
+        document.getElementById("voiceBtn").style.display = "block";
+        setTimeout(() => map.invalidateSize(), 300);
+      } else {
+        document.getElementById("loginError").textContent = "Invalid login.";
+      }
+    }
+
+    function logoutUser() {
+      currentUser = null;
+      document.getElementById("mainApp").style.display = "none";
+      document.getElementById("adminLogin").style.display = "flex";
+      document.getElementById("logoutBtn").style.display = "none";
+      document.getElementById("voiceBtn").style.display = "none";
+      leaveVoiceChannel();
+    }
+
+    function getTimeStamp() {
+      const now = new Date();
+      return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function sendChat() {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg || !currentUser) return;
+      db.ref(`missions/${missionKey}/chat`).push({ text: msg, time: getTimeStamp(), user: currentUser });
+      input.value = '';
+    }
+
+    function logComms() {
+      const input = document.getElementById('commsInput');
+      const entry = input.value.trim();
+      if (!entry) return;
+      db.ref(`missions/${missionKey}/comms`).push({ text: entry, time: getTimeStamp() });
+      input.value = '';
+    }
+
+    function uploadFile() {
+      const input = document.getElementById('fileUpload');
+      if (!input.files.length) return;
+      const file = input.files[0];
+      db.ref(`missions/${missionKey}/files`).push({ name: file.name });
+      input.value = '';
+    }
+
+    db.ref(`missions/${missionKey}/chat`).on('value', snap => {
+      const data = snap.val();
+      chatMessagesEl.innerHTML = '';
+      if (data) Object.values(data).forEach(msg => {
+        const div = document.createElement('div');
+        div.textContent = `[${msg.time || '??'}] ${msg.user || 'Unknown'}: ${msg.text || msg}`;
+        chatMessagesEl.appendChild(div);
+      });
+    });
+
+    db.ref(`missions/${missionKey}/comms`).on('value', snap => {
+      const data = snap.val();
+      commsLogEl.innerHTML = '';
+      if (data) Object.values(data).forEach(entry => {
+        const div = document.createElement('div');
+        div.textContent = `${entry.time || '??'} - ${entry.text || entry}`;
+        commsLogEl.appendChild(div);
+      });
+    });
+
+    db.ref(`missions/${missionKey}/files`).on('value', snap => {
+      const data = snap.val();
+      fileListEl.innerHTML = '';
+      if (data) Object.values(data).forEach(file => {
+        const li = document.createElement('li');
+        li.textContent = file.name;
+        fileListEl.appendChild(li);
+      });
+    });
+
+    let debounceTimeout;
+    document.getElementById("searchBox").addEventListener("input", function () {
+      clearTimeout(debounceTimeout);
+      debounceTimeout = setTimeout(searchProfile, 300);
+    });
+
+    function toggleProfileSearch() {
+      const box = document.getElementById("profileSearch");
+      box.style.display = box.style.display === "none" ? "block" : "none";
+    }
+
+    function searchProfile() {
+      const name = document.getElementById("searchBox").value.trim();
+      const resultBox = document.getElementById("profileResult");
+      if (!name) return resultBox.innerHTML = "";
+      db.ref(`profiles/${name}`).once('value', snap => {
+        const data = snap.val();
+        resultBox.innerHTML = data ? `<strong>${name}</strong><br><ul>${data.qualifications.map(q => `<li>${q}</li>`).join('')}</ul>` : 'Profile not found.';
+      });
+    }
+
+    // Voice Channel
+    let voiceStream = null;
+    let peers = {};
+    let voiceChannelActive = false;
+    const voiceRoom = "voiceRoom1";
+
+    async function toggleVoiceChannel() {
+      if (voiceChannelActive) {
+        leaveVoiceChannel();
+      } else {
+        joinVoiceChannel();
+      }
+    }
+
+    async function joinVoiceChannel() {
+      document.getElementById("voiceBtn").textContent = "Leave Voice";
+      voiceChannelActive = true;
+      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const myId = Date.now().toString();
+      const myRef = db.ref(`missions/${missionKey}/voice/${myId}`);
+      myRef.set(true);
+      myRef.onDisconnect().remove();
+
+      db.ref(`missions/${missionKey}/voice`).on("value", snap => {
+        const users = snap.val() || {};
+        Object.keys(users).forEach(id => {
+          if (id !== myId && !peers[id]) {
+            createVoicePeer(id, myId, myRef);
+          }
+        });
+      });
+    }
+
+    function leaveVoiceChannel() {
+      document.getElementById("voiceBtn").textContent = "Join Voice";
+      voiceChannelActive = false;
+      Object.values(peers).forEach(p => p.destroy());
+      peers = {};
+      voiceStream?.getTracks().forEach(t => t.stop());
+      db.ref(`missions/${missionKey}/voice`).off();
+      db.ref(`missions/${missionKey}/voice`).once("value", snap => {
+        const all = snap.val() || {};
+        for (const id in all) {
+          if (all[id] === true) db.ref(`missions/${missionKey}/voice/${id}`).remove();
+        }
+      });
+    }
+
+    function createVoicePeer(otherId, myId, myRef) {
+      const initiator = myId < otherId;
+      const peer = new SimplePeer({ initiator, trickle: false, stream: voiceStream });
+
+      peers[otherId] = peer;
+      const signalRef = db.ref(`missions/${missionKey}/signals/${myId}_${otherId}`);
+
+      peer.on('signal', data => {
+        signalRef.set(JSON.stringify(data));
+      });
+
+      db.ref(`missions/${missionKey}/signals/${otherId}_${myId}`).on('value', snap => {
+        const data = snap.val();
+        if (data) {
+          peer.signal(JSON.parse(data));
+        }
+      });
+
+      peer.on('stream', stream => {
+        const audio = new Audio();
+        audio.srcObject = stream;
+        audio.play();
+      });
+
+      peer.on('close', () => {
+        signalRef.remove();
+        delete peers[otherId];
+      });
+    }
+  </script>
+</body>
+</html>
